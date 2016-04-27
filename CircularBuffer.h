@@ -1,7 +1,7 @@
 /*
   CircularBuffer - An Arduino circular buffering library for arbitrary types.
 
-  Created by Ivo Pullens, Emmission, 2014 -- www.emmission.nl
+  Created by Ivo Pullens, Emmission, 2014-2016 -- www.emmission.nl
   
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
@@ -20,13 +20,7 @@
 
 #ifndef CircularBuffer_h
 #define CircularBuffer_h
-
-#define DISABLE_IRQ       \
-  uint8_t sreg = SREG;    \
-  cli();
-
-#define RESTORE_IRQ        \
-  SREG = sreg;
+#include <util/atomic.h>
 
 template <class T> class CircularBuffer
 {
@@ -44,26 +38,38 @@ template <class T> class CircularBuffer
     /** Clear all entries in the circular buffer. */
     void clear(void)
     {
-      m_front = 0;
-      m_fill  = 0;
+      ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+      {
+        m_front = 0;
+        m_fill  = 0;
+      }
     }
 
     /** Test if the circular buffer is empty */
     inline bool empty(void) const
     {
-      return !m_fill;
+      ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+      {
+        return !m_fill;
+      }
     }
 
     /** Return the number of records stored in the buffer */
     inline uint8_t available(void) const
     {
-      return m_fill;
+      ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+      {
+        return m_fill;
+      }
     }
 
     /** Test if the circular buffer is full */
     inline bool full(void) const
     {
-      return m_fill == m_size;
+      ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+      {
+        return m_fill == m_size;
+      }
     }
     
     /** Aquire record on front of the buffer, for writing.
@@ -73,11 +79,12 @@ template <class T> class CircularBuffer
      */
     T* getFront(void) const
     {
-      DISABLE_IRQ;
       T* f = NULL;
-      if (!full())
-        f = get(m_front);
-      RESTORE_IRQ;
+      ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+      {
+          if (!full())
+            f = get(m_front);
+      }
       return f;
     }
     
@@ -89,17 +96,18 @@ template <class T> class CircularBuffer
     bool pushFront(T* record)
     {
       bool ok = false;
-      DISABLE_IRQ;
-      if (!full())
+      ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
       {
-        T* f = get(m_front);
-        if (f != record)
-          *f = *record;
-        m_front = (m_front+1) % m_size;
-        m_fill++;
-        ok = true;
+          if (!full())
+          {
+            T* f = get(m_front);
+            if (f != record)
+              *f = *record;
+            m_front = (m_front+1) % m_size;
+            m_fill++;
+            ok = true;
+          }
       }
-      RESTORE_IRQ;
       return ok;
     }
 
@@ -111,10 +119,11 @@ template <class T> class CircularBuffer
     T* getBack(void) const
     {
       T* b = NULL;
-      DISABLE_IRQ;
-      if (!empty())
-        b = get(back());
-      RESTORE_IRQ;
+      ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+      {
+          if (!empty())
+            b = get(back());
+      }
       return b;
     }
 
@@ -124,13 +133,14 @@ template <class T> class CircularBuffer
     bool popBack(void)
     {
       bool ok = false;
-      DISABLE_IRQ;
-      if (!empty())
+      ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
       {
-        m_fill--;
-        ok = true;
+          if (!empty())
+          {
+            m_fill--;
+            ok = true;
+          }
       }
-      RESTORE_IRQ;
       return ok;
     }
     
